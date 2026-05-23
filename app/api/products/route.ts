@@ -1,48 +1,36 @@
+import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import {
+  cleanupExpiredReservations,
+} from "@/lib/cleanupExpiredReservations";
 
 export async function GET() {
-  try {
-
-    const inventory = await prisma.inventory.findMany({
-      include: {
-        product: true,
-        warehouse: true,
+    await cleanupExpiredReservations();
+  const products = await prisma.product.findMany({
+    include: {
+      inventory: {
+        include: {
+          warehouse: true,
+        },
       },
-    });
+    },
+  });
 
-    const formattedData = inventory.map((item) => ({
-      inventoryId: item.id,
+  const formatted = products.map((product) => ({
+    id: product.id,
+    name: product.name,
 
-      product: {
-        id: item.product.id,
-        name: item.product.name,
-      },
+    inventory: product.inventory.map((inv) => ({
+      warehouseId: inv.warehouseId,
+      warehouseName: inv.warehouse.name,
 
-      warehouse: {
-        id: item.warehouse.id,
-        name: item.warehouse.name,
-        location: item.warehouse.location,
-      },
+      totalStock: inv.totalQuantity,
+      reservedStock: inv.reservedQuantity,
 
-      totalQuantity: item.totalQuantity,
-      reservedQuantity: item.reservedQuantity,
+      availableStock:
+        inv.totalQuantity - inv.reservedQuantity,
+    })),
+  }));
 
-      availableQuantity:
-        item.totalQuantity - item.reservedQuantity,
-    }));
-
-    return NextResponse.json(formattedData);
-
-  } catch (error) {
-
-    console.error(error);
-
-    return NextResponse.json(
-      { error: "Failed to fetch products" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(formatted);
 }
